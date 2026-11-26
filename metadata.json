@@ -1,0 +1,6 @@
+{
+  "name": "AetherCloud Voice SDR",
+  "description": "Autonomous AI Sales Voice Agent with Gemini Live API bidirectional audio, Three.js Precision Acoustic Core, Hybrid RAG grounding, BANT/MEDDIC lead qualification, and automated CRM/calendar sync.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
