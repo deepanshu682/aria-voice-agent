@@ -166,6 +166,7 @@ export default function AppShell({
         const res = await fetch('/api/simulator/turn', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          signal: AbortSignal.timeout(45_000),
           body: JSON.stringify({
             utterance,
             history: historySnapshot.map((h) => ({ speaker: h.speaker, text: h.text })),

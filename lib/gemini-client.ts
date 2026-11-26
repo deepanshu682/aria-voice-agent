@@ -21,6 +21,9 @@ export function getGeminiClient(): GoogleGenAI {
     sharedClient = new GoogleGenAI({
       apiKey,
       httpOptions: {
+        apiVersion: 'v1beta',
+        timeout: 12_000,
+        retryOptions: { attempts: 1 },
         headers: {
           'User-Agent': 'aistudio-build',
         },

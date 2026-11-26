@@ -23,7 +23,7 @@ interface SimulatorTurnRequest {
 const PRIMARY_MODEL = process.env.GEMINI_MODEL || 'gemini-4-hydrogen';
 const FALLBACK_MODEL = process.env.GEMINI_FALLBACK_MODEL || 'gemini-3.8-flash';
 const TTS_MODEL = process.env.GEMINI_TTS_MODEL || 'gemini-3.8-flash-lite-tts';
-const CANDIDATE_MODELS = Array.from(new Set([PRIMARY_MODEL, FALLBACK_MODEL, 'gemini-3.1-flash-lite']));
+const CANDIDATE_MODELS = Array.from(new Set([PRIMARY_MODEL, FALLBACK_MODEL]));
 
 async function generateWithFallback(params: Omit<GenerateContentParameters, 'model'>) {
   const ai = getGeminiClient();
@@ -40,7 +40,10 @@ async function generateWithFallback(params: Omit<GenerateContentParameters, 'mod
       return await ai.models.generateContent({
         ...params,
         model,
-        config,
+        config: {
+          ...config,
+          abortSignal: AbortSignal.timeout(12_000),
+        },
       });
     } catch (err) {
       lastError = err;
@@ -83,7 +86,7 @@ async function synthesizeSpeechWavBase64(
         },
       ],
     },
-  });
+  }, { timeout_ms: 3_000, maxRetries: 0 });
   return ttsInteraction.output_audio?.data ?? undefined;
 }
 
@@ -166,8 +169,8 @@ export async function POST(req: NextRequest) {
     let finalText = '';
 
     try {
-      // Up to 3 tool-call rounds for multi-step flows (e.g. check_calendar -> book -> upsert_crm)
-      for (let round = 0; round < 3; round++) {
+      // Allow one follow-up generation after a tool call, with a bounded total number of rounds.
+      for (let round = 0; round < 2; round++) {
         const response = await generateWithFallback({
           contents,
           config: {
@@ -183,12 +186,34 @@ export async function POST(req: NextRequest) {
         if (calls && calls.length > 0 && modelContent) {
           contents.push(modelContent);
           const toolResponseParts = calls.map((call) => {
-            const dispatch = executeAgentTool(
+            let dispatch = executeAgentTool(
               call.name ?? 'unknown',
               call.args as Record<string, unknown> | undefined,
               true,
               { ragThreshold, topK }
             );
+
+            if (
+              call.name === 'search_knowledge_base' &&
+              dispatch.ragResult &&
+              !dispatch.ragResult.passedGuardrail &&
+              typeof call.args?.query === 'string' &&
+              call.args.query.trim().toLowerCase() !== utterance.toLowerCase()
+            ) {
+              const originalQueryDispatch = executeAgentTool(
+                'search_knowledge_base',
+                { query: utterance },
+                true,
+                { ragThreshold, topK }
+              );
+              if (
+                originalQueryDispatch.ragResult &&
+                originalQueryDispatch.ragResult.topScore > dispatch.ragResult.topScore
+              ) {
+                dispatch = originalQueryDispatch;
+              }
+            }
+
             toolLogs.push(dispatch.log);
             if (dispatch.ragResult) {
               latestRagResult = dispatch.ragResult;
@@ -217,8 +242,8 @@ export async function POST(req: NextRequest) {
         finalText = (response.text ?? '').trim();
         break;
       }
-    } catch {
-      // Execute grounded local tool pipeline if all cloud models hit a temporary 503 spike
+    } catch (err) {
+      console.error('[Simulator] Gemini generation failed; using local fallback:', err);
       const sentDispatch = executeAgentTool(
         'log_turn_sentiment',
         {
@@ -292,8 +317,8 @@ export async function POST(req: NextRequest) {
             : 'Natural, crisp, friendly, consultative enterprise advisor';
 
         audioWavBase64 = await synthesizeSpeechWavBase64(finalText, voiceName, ttsStyle);
-      } catch {
-        // Skip TTS audio silently if TTS endpoint is rate-limited
+      } catch (ttsErr) {
+        console.warn('[Simulator] TTS skipped after failure or timeout:', ttsErr);
       }
     }
 

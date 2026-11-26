@@ -4,7 +4,7 @@ import { KnowledgeCategory, KnowledgeChunk, RagCitation, RagSearchResult } from 
 export const ANTI_HALLUCINATION_THRESHOLD = 0.72;
 
 export const MANDATORY_FALLBACK_RESPONSE =
-  'I want to make sure I give you exact numbers on that—let me flag that for our solutions specialist to confirm right away, or I can include it in our demo agenda.';
+  'I do not have verified information about that in my knowledge base. I can flag it for a solutions specialist to confirm or include it in your demo agenda.';
 
 // Concept cluster synonyms for deterministic dense semantic projection
 const SEMANTIC_CONCEPTS: Record<string, string[]> = {
